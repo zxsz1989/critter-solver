@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 核心：iOS 专属配置，禁止缩放，全屏运行 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Critter AI">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    
+    <title>Critter Haven AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #f3f4f6; 
+            -webkit-tap-highlight-color: transparent; /* 去除 iOS 点击闪烁 */
+            overscroll-behavior-y: none; /* 防止下拉刷新干扰 */
+        }
+        .grid-board {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 2px;
+            background-color: #a3d977;
+            border: 4px solid #76b856;
+            padding: 4px;
+            border-radius: 12px;
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.2);
+            touch-action: none;
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        .cell {
+            aspect-ratio: 1;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            overflow: hidden;
+        }
+        /* 移动端取消 hover，避免点击粘滞 */
+        .cell:active { background-color: rgba(255, 255, 255, 0.6); transform: scale(0.95); z-index: 5; }
+        .cell-img { width: 95%; height: 95%; object-fit: contain; pointer-events: none; }
+        .cell.highlight {
+            background-color: #fbbf24;
+            box-shadow: 0 0 15px #fbbf24;
+            border: 3px solid #b45309;
+            z-index: 10;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
+        .palette-btn { width: 3rem; height: 3rem; padding: 0.25rem; transition: all 0.1s; cursor: pointer; }
+        .palette-btn img { width: 100%; height: 100%; object-fit: contain; }
+        .palette-btn.selected { background-color: #d1d5db; border-color: #4b5563; transform: scale(1.1); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .palette-btn.merge-source { box-shadow: 0 0 0 4px #6366f1; border-color: transparent; animation: pulse 1s infinite; }
+        
+        #uploadCanvas {
+            max-width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* 苹果设备底部安全区适配 */
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+    </style>
+</head>
+<body class="min-h-screen pb-12 safe-pb">
+
+<!-- 顶部导航栏模仿原生 App -->
+<div class="bg-white/90 backdrop-blur-md sticky top-0 z-50 border-b border-gray-200 px-4 py-3 pt-[max(env(safe-area-inset-top),12px)] flex items-center justify-center shadow-sm">
+    <h1 class="text-xl font-bold text-gray-800">Critter AI 辅助</h1>
+</div>
+
+<div class="max-w-md mx-auto p-4">
+
+    <!-- 第一步：上传与截取 -->
+    <div id="step1-container" class="block animate-fade-in">
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6">
+            <h2 class="text-lg font-bold text-blue-900 mb-3">1. 选取游戏截图</h2>
+            <p class="text-sm text-gray-500 mb-4">从相册选择截图，AI 将自动定位 10x10 棋盘。</p>
+            
+            <label class="block w-full text-center bg-blue-50 text-blue-600 font-bold py-4 rounded-xl border-2 border-dashed border-blue-200 hover:bg-blue-100 active:bg-blue-200 cursor-pointer transition-colors">
+                <span class="text-2xl block mb-1">📸</span> 点击选择照片
+                <input type="file" id="imageUpload" accept="image/*" class="hidden"/>
+            </label>
+            
+            <div class="relative w-full text-center mt-4">
+                <canvas id="uploadCanvas" class="hidden mx-auto bg-gray-50"></canvas>
+            </div>
+
+            <div id="extractAction" class="hidden mt-5">
+                <button onclick="extractBoard()" class="w-full bg-blue-600 active:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 text-lg">
+                    ✨ 提取棋盘并过滤背景
+                </button>
+                <p class="text-[11px] text-gray-400 mt-2 text-center">如果红框位置不对，可直接在图上点击左上角和右下角手动框选。</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 第二步：求解器 -->
+    <div id="step2-container" class="hidden">
+        <button onclick="resetToUpload()" class="text-sm text-blue-500 font-medium mb-4 flex items-center">
+            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg> 重新选图
+        </button>
+        
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-4">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-base font-bold text-gray-800">📦 棋盘微调</h2>
+                <button onclick="toggleMergeMode()" id="mergeBtn" class="text-[11px] bg-indigo-50 text-indigo-600 px-2.5 py-1.5 rounded border border-indigo-100 font-bold active:bg-indigo-100">
+                    🔗 合并图案
+                </button>
+            </div>
+            
+            <div id="board" class="grid-board mb-4"></div>
+            
+            <p id="mergeStatus" class="text-xs text-indigo-700 mb-2 hidden font-medium bg-indigo-50 p-2 rounded border border-indigo-200"></p>
+            
+            <div id="palette" class="flex flex-wrap gap-1.5 p-2 bg-gray-50 rounded-xl justify-center"></div>
+        </div>
+
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+            <h2 class="text-base font-bold text-gray-800 mb-4">🤖 极速寻路引擎</h2>
+            
+            <button id="solveBtn" onclick="runSolver()" class="w-full bg-green-500 active:bg-green-600 text-white font-bold text-lg py-4 rounded-xl shadow-lg shadow-green-200 flex items-center justify-center gap-2">
+                🚀 开始寻找解法
+            </button>
+            
+            <div id="loading" class="hidden mt-4 flex flex-col items-center justify-center text-green-600">
+                <svg class="animate-spin h-6 w-6 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <div id="loadingText" class="text-center font-bold text-xs">正在计算，必定全清...</div>
+            </div>
+
+            <div id="resultArea" class="hidden flex-col mt-5 border-t border-gray-100 pt-5">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-md font-bold text-gray-800" id="stepCounter">步骤 0 / 0</h3>
+                    <span class="bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded-md border border-blue-100" id="scoreDisplay">--</span>
+                </div>
+
+                <div class="flex justify-between gap-3 mb-4">
+                    <button onclick="prevStep()" class="flex-1 bg-gray-100 active:bg-gray-200 text-gray-700 font-bold py-3.5 rounded-xl text-sm">⏪ 上一步</button>
+                    <button onclick="nextStep()" class="flex-1 bg-blue-500 active:bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-md shadow-blue-200 text-sm">下一步 ⏩</button>
+                </div>
+                
+                <p class="text-sm text-gray-600 font-medium text-center bg-gray-50 py-3 rounded-xl" id="stepInstruction">
+                    准备就绪，点击“下一步”。
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // 自动固定框与图片识别
+    // ==========================================
+    const canvas = document.getElementById('uploadCanvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let sourceImage = null, pt1 = null, pt2 = null;
+    let autoBoxSet = false; // 标记是否正在使用自动框
+
+    let ITEMS = { 0: { img: '', name: '空白' } }; 
+    let currentBoard = [], currentBrush = 0, rawTiles = [];
+    let currentBgBins = new Set();
+    let isMergeMode = false, mergeSourceId = null;
+
+    const fpCanvas = document.createElement('canvas');
+    fpCanvas.width = 4; fpCanvas.height = 4;
+    const fpCtx = fpCanvas.getContext('2d', { willReadFrequently: true });
+
+    document.getElementById('imageUpload').addEventListener('change', function(e) {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            sourceImage = new Image();
+            sourceImage.onload = function() {
+                // 限制最大宽度以适应手机屏幕，同时保持坐标计算正确
+                const screenW = window.innerWidth - 32; // padding 16*2
+                let scale = sourceImage.width > screenW ? screenW / sourceImage.width : 1;
+                canvas.width = sourceImage.width * scale; 
+                canvas.height = sourceImage.height * scale;
+                canvas.style.display = 'block'; 
+                
+                // 自动框选绝招：利用已知的绝对比例模板
+                autoDetectGrid();
+                
+                drawUploadCanvas(); 
+                document.getElementById('extractAction').classList.remove('hidden');
+                
+                // 滚动到图片位置方便查看
+                setTimeout(() => { canvas.scrollIntoView({behavior: "smooth", block: "center"}); }, 100);
+            }
+            sourceImage.src = event.target.result;
+        }
+        reader.readAsDataURL(file);
+    });
+
+    // 绝对比例法模板定位
+    function autoDetectGrid() {
+        const w = canvas.width;
+        const h = canvas.height;
+        // 根据你提供的两张图测量得出的终极比例
+        const boxWidth = w * 0.936; 
+        const boxHeight = boxWidth; // 10x10 是正方形
+        const startX = (w - boxWidth) / 2; // 水平居中
+        const startY = h * 0.395; // 顶部距离手机屏幕顶部约 39.5%
+        
+        pt1 = { x: startX, y: startY };
+        pt2 = { x: startX + boxWidth, y: startY + boxHeight };
+        autoBoxSet = true;
+    }
+
+    // 手动调整框选
+    canvas.addEventListener('pointerdown', function(e) {
+        if (!sourceImage) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+        // 如果目前是自动框，点一下直接重置为手动两点框选模式
+        if (autoBoxSet) {
+            pt1 = { x, y }; pt2 = null; autoBoxSet = false;
+        } else {
+            if (!pt1) { pt1 = { x, y }; } 
+            else if (!pt2) {
+                pt2 = { x, y };
+                let temp1 = { x: Math.min(pt1.x, pt2.x), y: Math.min(pt1.y, pt2.y) };
+                let temp2 = { x: Math.max(pt1.x, pt2.x), y: Math.max(pt1.y, pt2.y) };
+                pt1 = temp1; pt2 = temp2;
+            } else {
+                pt1 = { x, y }; pt2 = null;
+            }
+        }
+        drawUploadCanvas();
+    });
+
+    function drawUploadCanvas() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(sourceImage, 0, 0, canvas.width, canvas.height);
+        
+        if (pt1 && !pt2) {
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath(); ctx.arc(pt1.x, pt1.y, 6, 0, 2 * Math.PI); ctx.fill();
+        } else if (pt1 && pt2) {
+            const w = pt2.x - pt1.x, h = pt2.y - pt1.y;
+            ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3;
+            ctx.strokeRect(pt1.x, pt1.y, w, h);
+            
+            ctx.beginPath(); ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'; ctx.lineWidth = 1;
+            for (let i = 1; i < 10; i++) { let y = pt1.y + i * (h / 10); ctx.moveTo(pt1.x, y); ctx.lineTo(pt2.x, y); }
+            for (let i = 1; i < 10; i++) { let x = pt1.x + i * (w / 10); ctx.moveTo(x, pt1.y); ctx.lineTo(x, pt2.y); }
+            ctx.stroke();
+            
+            // 四个角的加粗提示
+            ctx.fillStyle = '#ef4444';
+            const s = 8;
+            ctx.fillRect(pt1.x-s/2, pt1.y-s/2, s, s); ctx.fillRect(pt2.x-s/2, pt1.y-s/2, s, s);
+            ctx.fillRect(pt1.x-s/2, pt2.y-s/2, s, s); ctx.fillRect(pt2.x-s/2, pt2.y-s/2, s, s);
+        }
+    }
+
+    // ==========================================
+    // 绿幕直方图与 HAC 聚类
+    // ==========================================
+    function extractBoard() {
+        if (!pt1 || !pt2) return;
+        const w = pt2.x - pt1.x, h = pt2.y - pt1.y, cellW = w / 10, cellH = h / 10;
+        rawTiles = []; 
+        let tCanvas = document.createElement('canvas'); tCanvas.width = cellW * 0.8; tCanvas.height = cellH * 0.8;
+        let tCtx = tCanvas.getContext('2d');
+        let globalHist = new Int32Array(512);
+
+        for (let r = 0; r < 10; r++) {
+            for (let c = 0; c < 10; c++) {
+                let cx = pt1.x + c * cellW, cy = pt1.y + r * cellH;
+                let sW = cellW * 0.5, sH = cellH * 0.5;
+                let sX = cx + (cellW - sW) / 2, sY = cy + (cellH - sH) / 2;
+                
+                let imgData = ctx.getImageData(sX, sY, sW, sH).data;
+                let hist = new Int32Array(512);
+                for (let i = 0; i < imgData.length; i += 4) {
+                    let rVal = imgData[i] >> 5, gVal = imgData[i+1] >> 5, bVal = imgData[i+2] >> 5;
+                    let bin = (rVal << 6) | (gVal << 3) | bVal;
+                    hist[bin]++; globalHist[bin]++;
+                }
+                
+                tCtx.clearRect(0, 0, tCanvas.width, tCanvas.height);
+                tCtx.drawImage(canvas, cx + cellW*0.1, cy + cellH*0.1, cellW*0.8, cellH*0.8, 0, 0, tCanvas.width, tCanvas.height);
+                rawTiles.push({ r: r, c: c, hist: hist, img: tCanvas.toDataURL(), id: -1 });
+            }
+        }
+
+        currentBgBins = new Set();
+        let sortedBins = Array.from(globalHist).map((count, bin) => ({bin, count})).sort((a,b) => b.count - a.count);
+        for(let i = 0; i < 3; i++) currentBgBins.add(sortedBins[i].bin);
+
+        document.getElementById('step1-container').classList.add('hidden');
+        document.getElementById('step2-container').classList.remove('hidden');
+        doClustering();
+    }
+
+    function doClustering() {
+        if (isMergeMode) toggleMergeMode();
+        let tol = 0.28; // 最佳固定容差值
+        let clusters = []; let nextId = 1;
+
+        rawTiles.forEach(tile => {
+            let nonBgCount = 0, totalCount = 0;
+            for(let i = 0; i < 512; i++) {
+                totalCount += tile.hist[i];
+                if(!currentBgBins.has(i)) nonBgCount += tile.hist[i]; 
+            }
+
+            if (totalCount > 0 && (nonBgCount / totalCount < 0.12)) {
+                tile.id = 0; return;
+            }
+
+            let bestMatch = null, minDist = Infinity;
+            for (let cl of clusters) {
+                let diff = 0, sum = 0;
+                for (let i = 0; i < 512; i++) {
+                    if (currentBgBins.has(i)) continue; 
+                    diff += Math.abs(tile.hist[i] - cl.hist[i]);
+                    sum += tile.hist[i] + cl.hist[i];
+                }
+                let dist = sum === 0 ? 0 : diff / sum;
+                if (dist < tol && dist < minDist) { minDist = dist; bestMatch = cl; }
+            }
+
+            if (bestMatch) {
+                tile.id = bestMatch.id; bestMatch.count++;
+                for(let i = 0; i < 512; i++) bestMatch.hist[i] = (bestMatch.hist[i] * (bestMatch.count - 1) + tile.hist[i]) / bestMatch.count;
+            } else {
+                let newHist = new Float32Array(512);
+                for(let i = 0; i < 512; i++) newHist[i] = tile.hist[i];
+                clusters.push({ id: nextId, hist: newHist, count: 1, img: tile.img });
+                tile.id = nextId++;
+            }
+        });
+
+        ITEMS = { 0: { img: '', name: '空白' } };
+        clusters.forEach(cl => { ITEMS[cl.id] = { img: cl.img, name: `图案 ${cl.id}` }; });
+
+        currentBoard = Array(10).fill().map(() => Array(10).fill(0));
+        rawTiles.forEach(t => { currentBoard[t.r][t.c] = t.id; });
+        currentBrush = 0; initSolverUI(); 
+    }
+
+    function toggleMergeMode() {
+        isMergeMode = !isMergeMode; mergeSourceId = null;
+        const btn = document.getElementById('mergeBtn');
+        const status = document.getElementById('mergeStatus');
+        
+        if (isMergeMode) {
+            btn.classList.replace('bg-indigo-50', 'bg-indigo-500');
+            btn.classList.replace('text-indigo-600', 'text-white');
+            btn.innerHTML = '❌ 取消合并';
+            status.classList.remove('hidden');
+            status.innerHTML = '👉 点选第一个重复的图案';
+        } else {
+            btn.classList.replace('bg-indigo-500', 'bg-indigo-50');
+            btn.classList.replace('text-white', 'text-indigo-600');
+            btn.innerHTML = '🔗 合并图案';
+            status.classList.add('hidden');
+        }
+        renderPalette();
+    }
+
+    function handleMergeClick(id) {
+        const status = document.getElementById('mergeStatus');
+        if (mergeSourceId === null) {
+            mergeSourceId = id;
+            status.innerHTML = '👉 很好，再点击第二个把它吞并';
+            renderPalette();
+        } else {
+            if (mergeSourceId === id) { toggleMergeMode(); return; }
+            for(let r=0; r<10; r++) for(let c=0; c<10; c++) if (currentBoard[r][c] === id) currentBoard[r][c] = mergeSourceId;
+            delete ITEMS[id]; toggleMergeMode(); initSolverUI();
+        }
+    }
+
+    function resetToUpload() {
+        document.getElementById('step2-container').classList.add('hidden');
+        document.getElementById('step1-container').classList.remove('hidden');
+        resetToEditMode();
+    }
+
+    // ==========================================
+    // UI 控制
+    // ==========================================
+    const ROWS = 10, COLS = 10;
+    let solutionSteps = [], currentStepIndex = 0, playbackStates = [];
+
+    function initSolverUI() { renderPalette(); renderBoard(currentBoard); }
+
+    function renderPalette() {
+        const div = document.getElementById('palette'); div.innerHTML = '';
+        let eraser = document.createElement('div');
+        eraser.className = `palette-btn rounded-lg border-2 bg-white flex items-center justify-center ${currentBrush === 0 && !isMergeMode ? 'selected border-red-400 bg-red-50' : 'border-gray-100'} ${isMergeMode ? 'opacity-50' : ''}`;
+        eraser.innerHTML = '<span class="text-xl">✖️</span>';
+        eraser.onclick = () => { if(!isMergeMode) { currentBrush = 0; renderPalette(); } };
+        div.appendChild(eraser);
+
+        for (let id in ITEMS) {
+            if (id == 0) continue;
+            let btn = document.createElement('div');
+            let classes = "palette-btn rounded-lg border-2 bg-white flex items-center justify-center ";
+            if (isMergeMode) {
+                if (mergeSourceId === parseInt(id)) classes += "merge-source";
+                else classes += "border-gray-100";
+            } else {
+                if (currentBrush == id) classes += "selected border-blue-400 bg-blue-50";
+                else classes += "border-gray-100";
+            }
+            btn.className = classes; btn.innerHTML = `<img src="${ITEMS[id].img}">`;
+            btn.onclick = () => { if (isMergeMode) handleMergeClick(parseInt(id)); else { currentBrush = parseInt(id); renderPalette(); } };
+            div.appendChild(btn);
+        }
+    }
+
+    function renderBoard(board, highlightGroup = null) {
+        const boardDiv = document.getElementById('board'); boardDiv.innerHTML = '';
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let cell = document.createElement('div'); cell.className = 'cell';
+                let val = board[r][c];
+                if (val !== 0 && ITEMS[val]) {
+                    let img = document.createElement('img'); img.src = ITEMS[val].img; img.className = 'cell-img'; cell.appendChild(img);
+                }
+                if (highlightGroup && highlightGroup.some(pos => pos[0] === r && pos[1] === c)) cell.classList.add('highlight');
+                cell.onclick = () => {
+                    if (isMergeMode) return; 
+                    if (solutionSteps.length > 0) resetToEditMode();
+                    currentBoard[r][c] = currentBrush; renderBoard(currentBoard);
+                };
+                boardDiv.appendChild(cell);
+            }
+        }
+    }
+
+    function resetToEditMode() {
+        solutionSteps = []; playbackStates = [];
+        document.getElementById('resultArea').classList.add('hidden');
+        document.getElementById('solveBtn').innerHTML = '🚀 开始寻找解法';
+        document.getElementById('solveBtn').disabled = false;
+        renderBoard(currentBoard);
+    }
+
+    // ==========================================
+    // A* 极速寻路引擎 (支持单块消除，必定全清)
+    // ==========================================
+    function getHash(board) {
+        let str = "";
+        for(let r=0; r<ROWS; r++) for(let c=0; c<COLS; c++) str += String.fromCharCode(board[r][c] + 32); 
+        return str;
+    }
+
+    function getValidMoves(board) {
+        let visited = new Uint8Array(100);
+        let groups = [];
+        for (let r = 0; r < 10; r++) {
+            for (let c = 0; c < 10; c++) {
+                let v = board[r][c];
+                if (v !== 0 && visited[r*10+c] === 0) {
+                    let group = [], stack = [r*10+c]; visited[r*10+c] = 1;
+                    while (stack.length > 0) {
+                        let curr = stack.pop(), cr = Math.floor(curr / 10), cc = curr % 10;
+                        group.push([cr, cc]);
+                        if (cr > 0 && board[cr - 1][cc] === v && visited[curr - 10] === 0) { visited[curr - 10] = 1; stack.push(curr - 10); }
+                        if (cr < 9 && board[cr + 1][cc] === v && visited[curr + 10] === 0) { visited[curr + 10] = 1; stack.push(curr + 10); }
+                        if (cc > 0 && board[cr][cc - 1] === v && visited[curr - 1] === 0) { visited[curr - 1] = 1; stack.push(curr - 1); }
+                        if (cc < 9 && board[cr][cc + 1] === v && visited[curr + 1] === 0) { visited[curr + 1] = 1; stack.push(curr + 1); }
+                    }
+                    groups.push(group);
+                }
+            }
+        }
+        let usefulMoves = [];
+        for (let g of groups) {
+            if (g.length >= 2) usefulMoves.push(g);
+            else {
+                let r = g[0][0], c = g[0][1], hasBlocksAbove = false;
+                for (let r2 = r - 1; r2 >= 0; r2--) if (board[r2][c] !== 0) { hasBlocksAbove = true; break; }
+                if (hasBlocksAbove) usefulMoves.push(g);
+            }
+        }
+        return usefulMoves.length > 0 ? usefulMoves : groups;
+    }
+
+    function applyMove(board, group) {
+        let newBoard = board.map(row => [...row]);
+        for (let [r, c] of group) newBoard[r][c] = 0;
+        for (let c = 0; c < COLS; c++) {
+            let colItems = [];
+            for (let r = 0; r < ROWS; r++) if (newBoard[r][c] !== 0) colItems.push(newBoard[r][c]);
+            let emptyCount = ROWS - colItems.length;
+            for (let r = 0; r < ROWS; r++) newBoard[r][c] = r < emptyCount ? 0 : colItems[r - emptyCount];
+        }
+        return newBoard;
+    }
+
+    function evaluateState(board, steps) {
+        let remaining = 0, components = 0, visited = new Uint8Array(100);
+        for (let r = 0; r < 10; r++) {
+            for (let c = 0; c < 10; c++) {
+                let v = board[r][c];
+                if (v !== 0) {
+                    remaining++;
+                    let idx = r * 10 + c;
+                    if (visited[idx] === 0) {
+                        components++; let stack = [idx]; visited[idx] = 1;
+                        while (stack.length > 0) {
+                            let curr = stack.pop(), cr = Math.floor(curr / 10), cc = curr % 10;
+                            if (cr > 0 && board[cr - 1][cc] === v && visited[curr - 10] === 0) { visited[curr - 10] = 1; stack.push(curr - 10); }
+                            if (cr < 9 && board[cr + 1][cc] === v && visited[curr + 10] === 0) { visited[curr + 10] = 1; stack.push(curr + 10); }
+                            if (cc > 0 && board[cr][cc - 1] === v && visited[curr - 1] === 0) { visited[curr - 1] = 1; stack.push(curr - 1); }
+                            if (cc < 9 && board[cr][cc + 1] === v && visited[curr + 1] === 0) { visited[curr + 1] = 1; stack.push(curr + 1); }
+                        }
+                    }
+                }
+            }
+        }
+        if (remaining === 0) return 10000000 - steps;
+        return -((steps + components) * 10000) - (components * 100) - remaining;
+    }
+
+    async function runSolver() {
+        const btn = document.getElementById('solveBtn');
+        const loading = document.getElementById('loading');
+        const loadingText = document.getElementById('loadingText');
+        const resultArea = document.getElementById('resultArea');
+        
+        btn.disabled = true; loading.classList.remove('hidden'); resultArea.classList.add('hidden');
+        await new Promise(r => setTimeout(r, 50)); 
+
+        let initialRemain = 0;
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (currentBoard[r][c] !== 0) initialRemain++;
+        if (initialRemain === 0) { alert("棋盘是空的"); resetToEditMode(); return; }
+
+        let beam = [{ board: currentBoard, steps: [], score: evaluateState(currentBoard, 0) }];
+        const MAX_DEPTH = 100; const BEAM_WIDTH = 500; // 移动端适当降低并发数以防内存不足闪退
+        let bestFinalState = beam[0], minGlobalRemain = initialRemain, seen = new Set(); 
+
+        for (let depth = 0; depth < MAX_DEPTH; depth++) {
+            let nextCandidates = [], foundClear = false;
+            for (let state of beam) {
+                const moves = getValidMoves(state.board);
+                for (let group of moves) {
+                    const nextBoard = applyMove(state.board, group);
+                    const hash = getHash(nextBoard);
+                    if (!seen.has(hash)) {
+                        seen.add(hash);
+                        const nextState = { board: nextBoard, steps: [...state.steps, { group: group }], score: evaluateState(nextBoard, state.steps.length + 1) };
+                        nextCandidates.push(nextState);
+                        
+                        let remain = 0; for(let r=0; r<ROWS; r++) for(let c=0; c<COLS; c++) if(nextBoard[r][c]!==0) remain++;
+                        if (remain < minGlobalRemain) { minGlobalRemain = remain; bestFinalState = nextState; }
+                        if (remain === 0) { foundClear = true; bestFinalState = nextState; break; }
+                    }
+                }
+                if (foundClear) break;
+            }
+            if (foundClear || nextCandidates.length === 0) break; 
+            nextCandidates.sort((a,b) => b.score - a.score);
+            beam = nextCandidates.slice(0, BEAM_WIDTH);
+
+            loadingText.innerText = `AI 计算中... 盘面最少剩余: ${minGlobalRemain} 块`;
+            await new Promise(r => setTimeout(r, 10)); // 释放主线程让 UI 刷新
+        }
+        
+        loading.classList.add('hidden'); btn.innerHTML = '🔄 重新计算'; btn.disabled = false;
+        solutionSteps = bestFinalState.steps; currentStepIndex = 0;
+        playbackStates = [currentBoard.map(row=>[...row])];
+        let tempBoard = currentBoard.map(row=>[...row]);
+        for (let step of solutionSteps) {
+            let nextBoard = applyMove(tempBoard, step.group);
+            playbackStates.push(nextBoard); tempBoard = nextBoard;
+        }
+
+        resultArea.classList.remove('hidden');
+        document.getElementById('scoreDisplay').innerHTML = minGlobalRemain === 0 ? `🎉 完美全清 (${solutionSteps.length}步)` : `剩 ${minGlobalRemain} 块`;
+        updatePlaybackUI();
+        
+        // 计算完成后自动滚动到底部方便查看结果
+        setTimeout(() => { document.getElementById('resultArea').scrollIntoView({behavior: "smooth", block: "end"}); }, 200);
+    }
+
+    function updatePlaybackUI() {
+        const counter = document.getElementById('stepCounter');
+        const instruction = document.getElementById('stepInstruction');
+        counter.innerText = `步骤 ${currentStepIndex} / ${solutionSteps.length}`;
+        
+        if (currentStepIndex === solutionSteps.length) {
+            instruction.innerHTML = "✅ 演示结束！";
+            renderBoard(playbackStates[currentStepIndex]);
+        } else {
+            let currentStep = solutionSteps[currentStepIndex];
+            let itemType = playbackStates[currentStepIndex][currentStep.group[0][0]][currentStep.group[0][1]];
+            let actionText = currentStep.group.length === 1 ? "<span class='text-red-500 font-bold'>孤立单消</span>" : "点击消除";
+            
+            instruction.innerHTML = `
+                ${actionText} <img src="${ITEMS[itemType].img}" class="h-5 w-5 inline-block align-text-bottom mx-1 border border-gray-300 rounded"> 
+                <span class="text-xs text-gray-500">(共 ${currentStep.group.length} 块)</span>
+            `;
+            renderBoard(playbackStates[currentStepIndex], currentStep.group);
+        }
+    }
+
+    function prevStep() { if (currentStepIndex > 0) { currentStepIndex--; updatePlaybackUI(); } }
+    function nextStep() { if (currentStepIndex < solutionSteps.length) { currentStepIndex++; updatePlaybackUI(); } }
+</script>
+</body>
+</html>
