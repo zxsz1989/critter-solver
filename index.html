@@ -2,7 +2,6 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <!-- 核心：iOS 专属配置，禁止缩放，全屏运行 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -11,69 +10,26 @@
     
     <title>Critter Haven AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 GIF 生成库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-            background-color: #f3f4f6; 
-            -webkit-tap-highlight-color: transparent; /* 去除 iOS 点击闪烁 */
-            overscroll-behavior-y: none; /* 防止下拉刷新干扰 */
-        }
-        .grid-board {
-            display: grid;
-            grid-template-columns: repeat(10, 1fr);
-            gap: 2px;
-            background-color: #a3d977;
-            border: 4px solid #76b856;
-            padding: 4px;
-            border-radius: 12px;
-            box-shadow: inset 0 2px 6px rgba(0,0,0,0.2);
-            touch-action: none;
-            width: 100%;
-            max-width: 400px;
-            margin: 0 auto;
-        }
-        .cell {
-            aspect-ratio: 1;
-            background-color: rgba(255, 255, 255, 0.3);
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            user-select: none;
-            position: relative;
-            overflow: hidden;
-        }
-        /* 移动端取消 hover，避免点击粘滞 */
+        body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+        .grid-board { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; background-color: #a3d977; border: 4px solid #76b856; padding: 4px; border-radius: 12px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.2); touch-action: none; width: 100%; max-width: 400px; margin: 0 auto; }
+        .cell { aspect-ratio: 1; background-color: rgba(255, 255, 255, 0.3); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; position: relative; overflow: hidden; }
         .cell:active { background-color: rgba(255, 255, 255, 0.6); transform: scale(0.95); z-index: 5; }
         .cell-img { width: 95%; height: 95%; object-fit: contain; pointer-events: none; }
-        .cell.highlight {
-            background-color: #fbbf24;
-            box-shadow: 0 0 15px #fbbf24;
-            border: 3px solid #b45309;
-            z-index: 10;
-            animation: pulse 1s infinite;
-        }
+        .cell.highlight { background-color: #fbbf24; box-shadow: 0 0 15px #fbbf24; border: 3px solid #ef4444; z-index: 10; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
         .palette-btn { width: 3rem; height: 3rem; padding: 0.25rem; transition: all 0.1s; cursor: pointer; }
         .palette-btn img { width: 100%; height: 100%; object-fit: contain; }
         .palette-btn.selected { background-color: #d1d5db; border-color: #4b5563; transform: scale(1.1); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .palette-btn.merge-source { box-shadow: 0 0 0 4px #6366f1; border-color: transparent; animation: pulse 1s infinite; }
-        
-        #uploadCanvas {
-            max-width: 100%;
-            height: auto;
-            border-radius: 0.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-        
-        /* 苹果设备底部安全区适配 */
+        #uploadCanvas { max-width: 100%; height: auto; border-radius: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
 <body class="min-h-screen pb-12 safe-pb">
 
-<!-- 顶部导航栏模仿原生 App -->
 <div class="bg-white/90 backdrop-blur-md sticky top-0 z-50 border-b border-gray-200 px-4 py-3 pt-[max(env(safe-area-inset-top),12px)] flex items-center justify-center shadow-sm">
     <h1 class="text-xl font-bold text-gray-800">Critter AI 辅助</h1>
 </div>
@@ -84,7 +40,7 @@
     <div id="step1-container" class="block animate-fade-in">
         <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6">
             <h2 class="text-lg font-bold text-blue-900 mb-3">1. 选取游戏截图</h2>
-            <p class="text-sm text-gray-500 mb-4">从相册选择截图，AI 将自动定位 10x10 棋盘。</p>
+            <p class="text-sm text-gray-500 mb-4">从相册选择截图，AI 将自动定位棋盘并提取图像。</p>
             
             <label class="block w-full text-center bg-blue-50 text-blue-600 font-bold py-4 rounded-xl border-2 border-dashed border-blue-200 hover:bg-blue-100 active:bg-blue-200 cursor-pointer transition-colors">
                 <span class="text-2xl block mb-1">📸</span> 点击选择照片
@@ -99,7 +55,6 @@
                 <button onclick="extractBoard()" class="w-full bg-blue-600 active:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 text-lg">
                     ✨ 提取棋盘并过滤背景
                 </button>
-                <p class="text-[11px] text-gray-400 mt-2 text-center">如果红框位置不对，可直接在图上点击左上角和右下角手动框选。</p>
             </div>
         </div>
     </div>
@@ -118,10 +73,18 @@
                 </button>
             </div>
             
+            <!-- 容差滑块 -->
+            <div class="w-full bg-gray-50 p-2 rounded-lg border border-gray-200 mb-4">
+                <div class="flex justify-between items-center mb-1">
+                    <label class="text-[11px] font-bold text-gray-600">识别容差:</label>
+                    <span id="toleranceVal" class="text-[11px] bg-white px-1.5 py-0.5 rounded text-gray-600 border border-gray-200">25</span>
+                </div>
+                <input type="range" id="toleranceSlider" min="5" max="60" value="25" class="w-full h-1 bg-gray-300 rounded-lg appearance-none" oninput="document.getElementById('toleranceVal').innerText = this.value" onchange="doClustering()">
+            </div>
+
             <div id="board" class="grid-board mb-4"></div>
             
             <p id="mergeStatus" class="text-xs text-indigo-700 mb-2 hidden font-medium bg-indigo-50 p-2 rounded border border-indigo-200"></p>
-            
             <div id="palette" class="flex flex-wrap gap-1.5 p-2 bg-gray-50 rounded-xl justify-center"></div>
         </div>
 
@@ -151,31 +114,26 @@
                     <button onclick="nextStep()" class="flex-1 bg-blue-500 active:bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-md shadow-blue-200 text-sm">下一步 ⏩</button>
                 </div>
                 
-                <p class="text-sm text-gray-600 font-medium text-center bg-gray-50 py-3 rounded-xl" id="stepInstruction">
+                <p class="text-sm text-gray-600 font-medium text-center bg-gray-50 py-3 rounded-xl mb-4" id="stepInstruction">
                     准备就绪，点击“下一步”。
                 </p>
+
+                <!-- 新增：GIF 下载按钮 -->
+                <button id="gifBtn" onclick="exportGIF()" class="w-full bg-indigo-500 active:bg-indigo-600 text-white font-bold text-sm py-3.5 rounded-xl shadow-md flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    📥 导出为 GIF 动图 (保存在相册对照)
+                </button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    // ==========================================
-    // 自动固定框与图片识别
-    // ==========================================
     const canvas = document.getElementById('uploadCanvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    let sourceImage = null, pt1 = null, pt2 = null;
-    let autoBoxSet = false; // 标记是否正在使用自动框
-
-    let ITEMS = { 0: { img: '', name: '空白' } }; 
-    let currentBoard = [], currentBrush = 0, rawTiles = [];
-    let currentBgBins = new Set();
-    let isMergeMode = false, mergeSourceId = null;
-
-    const fpCanvas = document.createElement('canvas');
-    fpCanvas.width = 4; fpCanvas.height = 4;
-    const fpCtx = fpCanvas.getContext('2d', { willReadFrequently: true });
+    let sourceImage = null, pt1 = null, pt2 = null, autoBoxSet = false;
+    let ITEMS = { 0: { img: '', name: '空白' } }, currentBoard = [], currentBrush = 0, rawTiles = [];
+    let currentBgBins = new Set(), isMergeMode = false, mergeSourceId = null;
 
     document.getElementById('imageUpload').addEventListener('change', function(e) {
         const file = e.target.files[0]; if (!file) return;
@@ -183,20 +141,12 @@
         reader.onload = function(event) {
             sourceImage = new Image();
             sourceImage.onload = function() {
-                // 限制最大宽度以适应手机屏幕，同时保持坐标计算正确
-                const screenW = window.innerWidth - 32; // padding 16*2
+                const screenW = window.innerWidth - 32;
                 let scale = sourceImage.width > screenW ? screenW / sourceImage.width : 1;
-                canvas.width = sourceImage.width * scale; 
-                canvas.height = sourceImage.height * scale;
+                canvas.width = sourceImage.width * scale; canvas.height = sourceImage.height * scale;
                 canvas.style.display = 'block'; 
-                
-                // 自动框选绝招：利用已知的绝对比例模板
-                autoDetectGrid();
-                
-                drawUploadCanvas(); 
+                autoDetectGrid(); drawUploadCanvas(); 
                 document.getElementById('extractAction').classList.remove('hidden');
-                
-                // 滚动到图片位置方便查看
                 setTimeout(() => { canvas.scrollIntoView({behavior: "smooth", block: "center"}); }, 100);
             }
             sourceImage.src = event.target.result;
@@ -204,41 +154,28 @@
         reader.readAsDataURL(file);
     });
 
-    // 绝对比例法模板定位
     function autoDetectGrid() {
-        const w = canvas.width;
-        const h = canvas.height;
-        // 根据你提供的两张图测量得出的终极比例
-        const boxWidth = w * 0.936; 
-        const boxHeight = boxWidth; // 10x10 是正方形
-        const startX = (w - boxWidth) / 2; // 水平居中
-        const startY = h * 0.395; // 顶部距离手机屏幕顶部约 39.5%
-        
-        pt1 = { x: startX, y: startY };
-        pt2 = { x: startX + boxWidth, y: startY + boxHeight };
+        const w = canvas.width, h = canvas.height;
+        const boxWidth = w * 0.936, boxHeight = boxWidth;
+        const startX = (w - boxWidth) / 2, startY = h * 0.395; 
+        pt1 = { x: startX, y: startY }; pt2 = { x: startX + boxWidth, y: startY + boxHeight };
         autoBoxSet = true;
     }
 
-    // 手动调整框选
     canvas.addEventListener('pointerdown', function(e) {
         if (!sourceImage) return;
         const rect = canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) * (canvas.width / rect.width);
         const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-
-        // 如果目前是自动框，点一下直接重置为手动两点框选模式
-        if (autoBoxSet) {
-            pt1 = { x, y }; pt2 = null; autoBoxSet = false;
-        } else {
+        if (autoBoxSet) { pt1 = { x, y }; pt2 = null; autoBoxSet = false; } 
+        else {
             if (!pt1) { pt1 = { x, y }; } 
             else if (!pt2) {
                 pt2 = { x, y };
                 let temp1 = { x: Math.min(pt1.x, pt2.x), y: Math.min(pt1.y, pt2.y) };
                 let temp2 = { x: Math.max(pt1.x, pt2.x), y: Math.max(pt1.y, pt2.y) };
                 pt1 = temp1; pt2 = temp2;
-            } else {
-                pt1 = { x, y }; pt2 = null;
-            }
+            } else { pt1 = { x, y }; pt2 = null; }
         }
         drawUploadCanvas();
     });
@@ -246,31 +183,21 @@
     function drawUploadCanvas() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(sourceImage, 0, 0, canvas.width, canvas.height);
-        
         if (pt1 && !pt2) {
-            ctx.fillStyle = '#ef4444';
-            ctx.beginPath(); ctx.arc(pt1.x, pt1.y, 6, 0, 2 * Math.PI); ctx.fill();
+            ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(pt1.x, pt1.y, 6, 0, 2 * Math.PI); ctx.fill();
         } else if (pt1 && pt2) {
             const w = pt2.x - pt1.x, h = pt2.y - pt1.y;
-            ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3;
-            ctx.strokeRect(pt1.x, pt1.y, w, h);
-            
+            ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3; ctx.strokeRect(pt1.x, pt1.y, w, h);
             ctx.beginPath(); ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'; ctx.lineWidth = 1;
             for (let i = 1; i < 10; i++) { let y = pt1.y + i * (h / 10); ctx.moveTo(pt1.x, y); ctx.lineTo(pt2.x, y); }
             for (let i = 1; i < 10; i++) { let x = pt1.x + i * (w / 10); ctx.moveTo(x, pt1.y); ctx.lineTo(x, pt2.y); }
             ctx.stroke();
-            
-            // 四个角的加粗提示
-            ctx.fillStyle = '#ef4444';
-            const s = 8;
+            ctx.fillStyle = '#ef4444'; const s = 8;
             ctx.fillRect(pt1.x-s/2, pt1.y-s/2, s, s); ctx.fillRect(pt2.x-s/2, pt1.y-s/2, s, s);
             ctx.fillRect(pt1.x-s/2, pt2.y-s/2, s, s); ctx.fillRect(pt2.x-s/2, pt2.y-s/2, s, s);
         }
     }
 
-    // ==========================================
-    // 绿幕直方图与 HAC 聚类
-    // ==========================================
     function extractBoard() {
         if (!pt1 || !pt2) return;
         const w = pt2.x - pt1.x, h = pt2.y - pt1.y, cellW = w / 10, cellH = h / 10;
@@ -298,7 +225,6 @@
                 rawTiles.push({ r: r, c: c, hist: hist, img: tCanvas.toDataURL(), id: -1 });
             }
         }
-
         currentBgBins = new Set();
         let sortedBins = Array.from(globalHist).map((count, bin) => ({bin, count})).sort((a,b) => b.count - a.count);
         for(let i = 0; i < 3; i++) currentBgBins.add(sortedBins[i].bin);
@@ -310,7 +236,7 @@
 
     function doClustering() {
         if (isMergeMode) toggleMergeMode();
-        let tol = 0.28; // 最佳固定容差值
+        let tol = parseInt(document.getElementById('toleranceSlider').value) / 100.0;
         let clusters = []; let nextId = 1;
 
         rawTiles.forEach(tile => {
@@ -319,10 +245,7 @@
                 totalCount += tile.hist[i];
                 if(!currentBgBins.has(i)) nonBgCount += tile.hist[i]; 
             }
-
-            if (totalCount > 0 && (nonBgCount / totalCount < 0.12)) {
-                tile.id = 0; return;
-            }
+            if (totalCount > 0 && (nonBgCount / totalCount < 0.10)) { tile.id = 0; return; }
 
             let bestMatch = null, minDist = Infinity;
             for (let cl of clusters) {
@@ -359,18 +282,12 @@
         isMergeMode = !isMergeMode; mergeSourceId = null;
         const btn = document.getElementById('mergeBtn');
         const status = document.getElementById('mergeStatus');
-        
         if (isMergeMode) {
-            btn.classList.replace('bg-indigo-50', 'bg-indigo-500');
-            btn.classList.replace('text-indigo-600', 'text-white');
-            btn.innerHTML = '❌ 取消合并';
-            status.classList.remove('hidden');
-            status.innerHTML = '👉 点选第一个重复的图案';
+            btn.classList.replace('bg-indigo-50', 'bg-indigo-500'); btn.classList.replace('text-indigo-600', 'text-white');
+            btn.innerHTML = '❌ 取消合并'; status.classList.remove('hidden'); status.innerHTML = '👉 点选第一个重复的图案';
         } else {
-            btn.classList.replace('bg-indigo-500', 'bg-indigo-50');
-            btn.classList.replace('text-white', 'text-indigo-600');
-            btn.innerHTML = '🔗 合并图案';
-            status.classList.add('hidden');
+            btn.classList.replace('bg-indigo-500', 'bg-indigo-50'); btn.classList.replace('text-white', 'text-indigo-600');
+            btn.innerHTML = '🔗 合并图案'; status.classList.add('hidden');
         }
         renderPalette();
     }
@@ -378,9 +295,7 @@
     function handleMergeClick(id) {
         const status = document.getElementById('mergeStatus');
         if (mergeSourceId === null) {
-            mergeSourceId = id;
-            status.innerHTML = '👉 很好，再点击第二个把它吞并';
-            renderPalette();
+            mergeSourceId = id; status.innerHTML = '👉 很好，再点击第二个把它吞并'; renderPalette();
         } else {
             if (mergeSourceId === id) { toggleMergeMode(); return; }
             for(let r=0; r<10; r++) for(let c=0; c<10; c++) if (currentBoard[r][c] === id) currentBoard[r][c] = mergeSourceId;
@@ -394,9 +309,6 @@
         resetToEditMode();
     }
 
-    // ==========================================
-    // UI 控制
-    // ==========================================
     const ROWS = 10, COLS = 10;
     let solutionSteps = [], currentStepIndex = 0, playbackStates = [];
 
@@ -415,11 +327,9 @@
             let btn = document.createElement('div');
             let classes = "palette-btn rounded-lg border-2 bg-white flex items-center justify-center ";
             if (isMergeMode) {
-                if (mergeSourceId === parseInt(id)) classes += "merge-source";
-                else classes += "border-gray-100";
+                if (mergeSourceId === parseInt(id)) classes += "merge-source"; else classes += "border-gray-100";
             } else {
-                if (currentBrush == id) classes += "selected border-blue-400 bg-blue-50";
-                else classes += "border-gray-100";
+                if (currentBrush == id) classes += "selected border-blue-400 bg-blue-50"; else classes += "border-gray-100";
             }
             btn.className = classes; btn.innerHTML = `<img src="${ITEMS[id].img}">`;
             btn.onclick = () => { if (isMergeMode) handleMergeClick(parseInt(id)); else { currentBrush = parseInt(id); renderPalette(); } };
@@ -455,9 +365,6 @@
         renderBoard(currentBoard);
     }
 
-    // ==========================================
-    // A* 极速寻路引擎 (支持单块消除，必定全清)
-    // ==========================================
     function getHash(board) {
         let str = "";
         for(let r=0; r<ROWS; r++) for(let c=0; c<COLS; c++) str += String.fromCharCode(board[r][c] + 32); 
@@ -547,7 +454,7 @@
         if (initialRemain === 0) { alert("棋盘是空的"); resetToEditMode(); return; }
 
         let beam = [{ board: currentBoard, steps: [], score: evaluateState(currentBoard, 0) }];
-        const MAX_DEPTH = 100; const BEAM_WIDTH = 500; // 移动端适当降低并发数以防内存不足闪退
+        const MAX_DEPTH = 100; const BEAM_WIDTH = 500; 
         let bestFinalState = beam[0], minGlobalRemain = initialRemain, seen = new Set(); 
 
         for (let depth = 0; depth < MAX_DEPTH; depth++) {
@@ -574,7 +481,7 @@
             beam = nextCandidates.slice(0, BEAM_WIDTH);
 
             loadingText.innerText = `AI 计算中... 盘面最少剩余: ${minGlobalRemain} 块`;
-            await new Promise(r => setTimeout(r, 10)); // 释放主线程让 UI 刷新
+            await new Promise(r => setTimeout(r, 10)); 
         }
         
         loading.classList.add('hidden'); btn.innerHTML = '🔄 重新计算'; btn.disabled = false;
@@ -590,7 +497,6 @@
         document.getElementById('scoreDisplay').innerHTML = minGlobalRemain === 0 ? `🎉 完美全清 (${solutionSteps.length}步)` : `剩 ${minGlobalRemain} 块`;
         updatePlaybackUI();
         
-        // 计算完成后自动滚动到底部方便查看结果
         setTimeout(() => { document.getElementById('resultArea').scrollIntoView({behavior: "smooth", block: "end"}); }, 200);
     }
 
@@ -617,6 +523,130 @@
 
     function prevStep() { if (currentStepIndex > 0) { currentStepIndex--; updatePlaybackUI(); } }
     function nextStep() { if (currentStepIndex < solutionSteps.length) { currentStepIndex++; updatePlaybackUI(); } }
+
+    // ==========================================
+    // 核心 V7.0 GIF 动图生成引擎
+    // ==========================================
+    async function exportGIF() {
+        const btn = document.getElementById('gifBtn');
+        btn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 拼命渲染中...';
+        btn.disabled = true;
+
+        try {
+            // 利用 Blob 绕过跨域 Web Worker 限制
+            let workerBlob = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js').then(r => r.blob());
+            let workerUrl = URL.createObjectURL(workerBlob);
+
+            const gif = new GIF({
+                workers: 2,
+                quality: 10,
+                workerScript: workerUrl,
+                width: 440,
+                height: 480, // 顶部留 40px 写字
+                background: '#a3d977'
+            });
+
+            // 提前预加载所有 Base64 图片进入 HTMLImageElement，防止绘制时闪烁
+            const loadedImages = {};
+            for (let id in ITEMS) {
+                if (id == 0) continue;
+                await new Promise(resolve => {
+                    const img = new Image();
+                    img.onload = () => { loadedImages[id] = img; resolve(); };
+                    img.src = ITEMS[id].img;
+                });
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 440;
+            canvas.height = 480;
+            const ctx = canvas.getContext('2d');
+            const cellSize = 40;
+            const paddingX = 20;
+            const paddingY = 60; // 给顶部文字留出空间
+
+            // 逐帧绘制
+            for (let i = 0; i < playbackStates.length; i++) {
+                let state = playbackStates[i];
+                let highlightGroup = i < solutionSteps.length ? solutionSteps[i].group : null;
+
+                // 画大背景
+                ctx.fillStyle = '#f3f4f6'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // 顶部文字提示
+                ctx.fillStyle = '#1f2937';
+                ctx.font = 'bold 24px sans-serif';
+                ctx.textAlign = 'center';
+                if (i === playbackStates.length - 1) {
+                    ctx.fillText('✅ 恭喜！完美全清！', canvas.width / 2, 35);
+                } else {
+                    ctx.fillText(`步骤 ${i} / ${solutionSteps.length}`, canvas.width / 2, 35);
+                }
+
+                // 画游戏棋盘外框
+                ctx.fillStyle = '#76b856';
+                ctx.fillRect(paddingX - 4, paddingY - 4, cellSize * COLS + 8, cellSize * ROWS + 8);
+                ctx.fillStyle = '#a3d977';
+                ctx.fillRect(paddingX, paddingY, cellSize * COLS, cellSize * ROWS);
+
+                // 画每一个方块
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        let val = state[r][c];
+                        let x = paddingX + c * cellSize;
+                        let y = paddingY + r * cellSize;
+
+                        // 格子半透明底色
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+
+                        // 画水果
+                        if (val !== 0 && loadedImages[val]) {
+                            ctx.drawImage(loadedImages[val], x + 2, y + 2, cellSize - 4, cellSize - 4);
+                        }
+
+                        // 如果这一步要消除它，画个醒目的红框！
+                        if (highlightGroup && highlightGroup.some(pos => pos[0] === r && pos[1] === c)) {
+                            ctx.strokeStyle = '#ef4444'; 
+                            ctx.lineWidth = 4;
+                            ctx.strokeRect(x, y, cellSize, cellSize);
+                            ctx.fillStyle = 'rgba(251, 191, 36, 0.5)'; // 黄色高光蒙版
+                            ctx.fillRect(x, y, cellSize, cellSize);
+                        }
+                    }
+                }
+                
+                // 把画好的这帧加入 GIF，如果是一步留 0.8 秒，最后一步展示 3 秒
+                let delay = (i === playbackStates.length - 1) ? 3000 : 800;
+                gif.addFrame(canvas, { copy: true, delay: delay });
+            }
+
+            // 完成后下载
+            gif.on('finished', function(blob) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Critter_Solution.gif';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                btn.innerHTML = '✅ 动图下载成功！';
+                setTimeout(() => { 
+                    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> 📥 导出为 GIF 动图 (保存在相册对照)'; 
+                    btn.disabled = false; 
+                }, 3000);
+            });
+
+            gif.render();
+            
+        } catch (e) {
+            alert('生成 GIF 失败，可能受网络影响无法加载组件。' + e);
+            btn.innerHTML = '重试导出 GIF';
+            btn.disabled = false;
+        }
+    }
 </script>
 </body>
 </html>
