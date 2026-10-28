@@ -24,12 +24,12 @@ A zero-dependency, pure client-side web solver for the **Critter Haven** 10×10 
    ```bash
    git clone https://github.com/your-username/critter-haven-solver.git
    ```
-2. 直接使用浏览器打开 `critter_haven-PC版.html`（或部署至 GitHub Pages / Vercel / Netlify 在手机端访问）。
+2. 直接使用浏览器打开 `index.html`（或部署至 GitHub Pages / Vercel / Netlify 在手机端访问）。
 
 This project is a self-contained single-file web application requiring no build step or backend server:
 
 1. Clone or download this repository.
-2. Open `critter_haven-PC版.html` directly in any modern browser (Safari, Chrome, Edge, Firefox), or host it on GitHub Pages for instant mobile access.
+2. Open `index.html` directly in any modern browser (Safari, Chrome, Edge, Firefox), or host it on GitHub Pages for instant mobile access.
 
 ### 方式二：开启 GitHub Pages 手机端在线使用 | Option 2: GitHub Pages Deployment
 
@@ -75,7 +75,7 @@ $$\text{Score}(B, s) = -\big((s + c) \times 10000 + c \times 100 + r\big)$$
 
 ```text
 .
-├── critter_haven-PC版.html   # 单文件完整应用（含 HTML/CSS/核心识别与求解引擎/GIF89a 编码器）
+├── index.html   # 单文件完整应用（含 HTML/CSS/核心识别与求解引擎/GIF89a 编码器）
 └── README.md                 # 中英双语项目说明文档
 ```
 
