@@ -1,4 +1,4 @@
-# 🐾 Critter Haven 智能截图求解器 V6.0 Pro | Smart Screenshot Solver
+# 🐾 Critter Haven 智能截图求解器  | Smart Screenshot Solver
 
 一个零外部依赖、纯前端运行的 **Critter Haven** 10×10 消除小游戏智能求解器。支持上传手机或电脑端游戏截图后**自动精准锁定棋盘区域**、**自适应奇偶格绿幕去背高精度图案聚类**、**启发式集束搜索（Beam Search）最少步数全清求解**，以及**慢速清晰步骤 GIF 动图合成与导出**（全面适配 iOS Safari / 微信内置浏览器与 PC 端）。
 
