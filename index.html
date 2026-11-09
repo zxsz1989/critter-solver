@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <title>Critter Haven 智能求解器 V6.1 (同屏跟打优化 + iOS适配 + 慢速GIF导出)</title>
+    <title>Critter Haven 智能求解器 V6.2 (断点续玩自动记忆 + 同屏跟打 + 慢速GIF导出)</title>
     <script src="https://cdn.tailwindcss.com/3.4.17"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -159,12 +159,18 @@
             <div>
                 <div class="flex items-center gap-2 flex-wrap">
                     <h1 class="text-base sm:text-xl font-extrabold text-slate-800 tracking-tight">Critter Haven 智能求解器</h1>
-                    <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">V6.1 同屏优化版</span>
+                    <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">V6.2 自动存档版</span>
+                    <span id="saveStatusBadge" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                        💾 进度实时自动保存
+                    </span>
                 </div>
-                <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5">图案合并置顶且求解自动收起 · 棋盘与上下步同屏紧贴 · 慢速步骤 GIF 导出</p>
+                <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5">断点续玩自动记忆（含截图/合并/当前第几步） · 棋盘与上下步同屏紧贴 · 慢速 GIF 导出</p>
             </div>
         </div>
-        <div class="flex items-center gap-2 self-start sm:self-auto">
+        <div class="flex items-center gap-1.5 flex-wrap self-start sm:self-auto">
+            <button id="clearSaveBtn" type="button" class="text-xs font-semibold px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 transition flex items-center gap-1 shadow-sm" title="清除已保存的断点记录并重置为初始测试图">
+                <span>🗑️</span> 清除存档
+            </button>
             <button id="loadDemoBtn" type="button" class="text-xs font-semibold px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition flex items-center gap-1 shadow-sm">
                 <span>🖼️</span> 加载测试截图
             </button>
@@ -205,7 +211,7 @@
                 <div class="text-3xl mb-1.5">📱</div>
                 <p class="text-sm sm:text-base font-bold text-slate-700 mb-1">点击上方「上传游戏截图」或「加载测试截图」</p>
                 <p class="text-xs text-slate-500 max-w-lg mx-auto">
-                    支持 iPhone / iPad / Android / PC 任意分辨率截图。上传后自动锁定 10×10 区域并完成图案识别。
+                    支持 iPhone / iPad / Android / PC 任意分辨率截图。上传后自动锁定 10×10 区域并实时保存进度，关闭页面再打开也能无缝继续。
                 </p>
             </div>
 
@@ -459,21 +465,159 @@
     }
 
     // =========================================================================
+    // 持久化断点存储引擎 (IndexedDB + localStorage 双保险，无缝恢复原图与步骤)
+    // =========================================================================
+    const STORAGE_KEY = 'critter_haven_solver_state_v6_2';
+    const IDB_NAME = 'CritterHavenSolverDB';
+    const IDB_STORE = 'sessions';
+    let isRestoringState = false;
+
+    function openSessionDB() {
+        return new Promise((resolve, reject) => {
+            if (!window.indexedDB) {
+                reject(new Error('IndexedDB not available'));
+                return;
+            }
+            const req = window.indexedDB.open(IDB_NAME, 1);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(IDB_STORE)) {
+                    db.createObjectStore(IDB_STORE);
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async function writePersistedData(payload) {
+        const json = JSON.stringify(payload);
+        try {
+            window.localStorage.setItem(STORAGE_KEY, json);
+        } catch (e) {
+            // 若图片较大超出 localStorage 限额，自动由下方 IndexedDB 完整承载
+        }
+        try {
+            const db = await openSessionDB();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction(IDB_STORE, 'readwrite');
+                tx.objectStore(IDB_STORE).put(payload, 'latest');
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+            db.close();
+        } catch (e) {
+            // Ignore sandbox storage restrictions
+        }
+    }
+
+    async function readPersistedData() {
+        try {
+            const db = await openSessionDB();
+            const res = await new Promise((resolve, reject) => {
+                const tx = db.transaction(IDB_STORE, 'readonly');
+                const req = tx.objectStore(IDB_STORE).get('latest');
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+            db.close();
+            if (res && res.version === '6.2') return res;
+        } catch (e) {
+            // Fallback to localStorage
+        }
+        try {
+            const raw = window.localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && parsed.version === '6.2') return parsed;
+            }
+        } catch (e) {
+            // Ignore
+        }
+        return null;
+    }
+
+    async function clearPersistedData() {
+        try {
+            window.localStorage.removeItem(STORAGE_KEY);
+        } catch (e) {}
+        try {
+            const db = await openSessionDB();
+            await new Promise((resolve) => {
+                const tx = db.transaction(IDB_STORE, 'readwrite');
+                tx.objectStore(IDB_STORE).delete('latest');
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => resolve();
+            });
+            db.close();
+        } catch (e) {}
+    }
+
+    function updateSaveStatusBadge(text) {
+        const badge = document.getElementById('saveStatusBadge');
+        if (!badge) return;
+        badge.innerHTML = text;
+    }
+
+    // 保存当前完整状态（上传的图片、框选坐标、容差、合并/微调后的棋盘与图案库、求解步骤、当前第几步）
+    async function saveAppState() {
+        if (isRestoringState || !sourceImage) return;
+        try {
+            const serializableItems = {};
+            for (const id in ITEMS) {
+                serializableItems[id] = {
+                    img: ITEMS[id].img || '',
+                    name: ITEMS[id].name || '',
+                    count: ITEMS[id].count || 0
+                };
+            }
+
+            const now = new Date();
+            const pad2 = n => String(n).padStart(2, '0');
+            const timeStr = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+
+            const payload = {
+                version: '6.2',
+                savedAt: timeStr,
+                isCustomUpload: currentImageSourceDataUrl !== 'DEMO',
+                imageDataUrl: currentImageSourceDataUrl,
+                pt1: pt1 ? { ...pt1 } : null,
+                pt2: pt2 ? { ...pt2 } : null,
+                tolerance: parseInt(document.getElementById('toleranceSlider').value, 10) || 16,
+                gifSpeed: document.getElementById('gifSpeedSelect').value || '180',
+                items: serializableItems,
+                currentBoard: currentBoard.map(r => [...r]),
+                solutionSteps: solutionSteps.map(s => ({ group: s.group.map(p => [...p]) })),
+                currentStepIndex,
+                scoreBadgeHtml: document.getElementById('scoreDisplay').innerHTML,
+                hasSolved: solutionSteps.length > 0
+            };
+
+            await writePersistedData(payload);
+            const stepInfo = solutionSteps.length > 0
+                ? `第 ${Math.min(currentStepIndex + 1, solutionSteps.length)}/${solutionSteps.length} 步`
+                : '棋盘已存';
+            updateSaveStatusBadge(`💾 已自动保存 (${stepInfo} · ${timeStr})`);
+        } catch (err) {
+            // Ignore
+        }
+    }
+
+    // =========================================================================
     // 全局状态与离屏原始分辨率画布
     // =========================================================================
     const ROWS = 10, COLS = 10;
     const uploadCanvas = document.getElementById('uploadCanvas');
     const ctx = uploadCanvas.getContext('2d', { willReadFrequently: true });
 
-    // 保存原图完整分辨率像素，避免手机端缩放导致画质损失
     const rawCanvas = document.createElement('canvas');
     const rawCtx = rawCanvas.getContext('2d', { willReadFrequently: true });
-    let displayScale = 1; // uploadCanvas 尺寸与 rawCanvas 的缩放比
+    let displayScale = 1;
 
     let sourceImage = null;
-    // pt1, pt2 存储在 rawCanvas (原始图像像素坐标系) 下，保证最高精度！
+    let currentImageSourceDataUrl = 'DEMO'; // 'DEMO' 或用户上传图片的 DataURL
     let pt1 = null, pt2 = null;
-    let dragMode = null; // 'tl', 'tr', 'bl', 'br', 'move', 'new'
+    let dragMode = null;
     let dragStartRaw = null, origPt1 = null, origPt2 = null;
 
     let ITEMS = { 0: { img: '', name: '空白', count: 0 } };
@@ -481,7 +625,7 @@
     let currentBrush = 0;
     let rawTiles = [];
 
-    let isBoardEditable = false; // 默认锁定棋盘防止手机滑动误触
+    let isBoardEditable = false;
     let isMergeMode = false, mergeSourceId = null;
 
     let solutionSteps = [];
@@ -515,7 +659,7 @@
     // =========================================================================
     // 第一部分：图像加载与双阶段草坪对比度 10x10 棋盘自动框选算法
     // =========================================================================
-    function loadFromImageElement(imgEl, autoRun = true) {
+    function setupRawAndUploadCanvas(imgEl) {
         sourceImage = imgEl;
         const nw = imgEl.naturalWidth || imgEl.width;
         const nh = imgEl.naturalHeight || imgEl.height;
@@ -524,7 +668,6 @@
         rawCtx.clearRect(0, 0, nw, nh);
         rawCtx.drawImage(imgEl, 0, 0, nw, nh);
 
-        // 计算显示画布尺寸
         const maxDisplayW = Math.min(window.innerWidth - 40, 520);
         displayScale = nw > maxDisplayW ? maxDisplayW / nw : 1;
         uploadCanvas.width = Math.round(nw * displayScale);
@@ -533,15 +676,21 @@
         document.getElementById('uploadDropzone').classList.add('hidden');
         document.getElementById('canvasWorkspace').classList.remove('hidden');
         document.getElementById('toggleCropPanelBtn').classList.remove('hidden');
+    }
+
+    function loadFromImageElement(imgEl, autoRun = true, imgSourceTag = 'DEMO') {
+        currentImageSourceDataUrl = imgSourceTag;
+        setupRawAndUploadCanvas(imgEl);
         document.getElementById('cropPanelBody').classList.remove('hidden');
         document.getElementById('toggleCropPanelBtn').textContent = '收起选框 ▲';
 
-        // 执行智能棋盘区域检测
         autoDetectGrid();
         drawUploadCanvas();
 
         if (autoRun && document.getElementById('autoExtractToggle').checked) {
             extractBoard(true);
+        } else {
+            saveAppState();
         }
     }
 
@@ -550,12 +699,13 @@
         if (!file) return;
         const reader = new FileReader();
         reader.onload = function(event) {
+            const dataUrl = event.target.result;
             const img = new Image();
             img.onload = function() {
-                loadFromImageElement(img, true);
-                showToast('已自动锁定 10×10 棋盘并完成高精度识别！', 'success');
+                loadFromImageElement(img, true, dataUrl);
+                showToast('已自动锁定 10×10 棋盘并保存当前图片进度！', 'success');
             };
-            img.src = event.target.result;
+            img.src = dataUrl;
         };
         reader.readAsDataURL(file);
     });
@@ -563,14 +713,26 @@
     document.getElementById('loadDemoBtn').addEventListener('click', function() {
         const demoImg = document.getElementById('demoImageAsset');
         if (demoImg && demoImg.complete && demoImg.naturalWidth > 0) {
-            loadFromImageElement(demoImg, true);
+            loadFromImageElement(demoImg, true, 'DEMO');
             showToast('已加载测试截图并自动锁定 10×10 棋盘！', 'success');
         } else if (demoImg) {
             demoImg.onload = () => {
-                loadFromImageElement(demoImg, true);
+                loadFromImageElement(demoImg, true, 'DEMO');
                 showToast('已加载测试截图并自动锁定 10×10 棋盘！', 'success');
             };
         }
+    });
+
+    document.getElementById('clearSaveBtn').addEventListener('click', async function() {
+        await clearPersistedData();
+        const demoImg = document.getElementById('demoImageAsset');
+        if (demoImg && demoImg.complete && demoImg.naturalWidth > 0) {
+            isRestoringState = true;
+            loadFromImageElement(demoImg, true, 'DEMO');
+            isRestoringState = false;
+        }
+        updateSaveStatusBadge('💾 存档已清空');
+        showToast('已清除本地保存的进度并重置为初始状态！', 'info');
     });
 
     // 自适应草坪背景与棋盘边界跳变检测算法
@@ -579,7 +741,6 @@
         const h = rawCanvas.height;
         const imgData = rawCtx.getImageData(0, 0, w, h).data;
 
-        // 1. 判定每个像素是否属于 Critter Haven 特有的浅黄绿草坪背景 (R≈192, G≈214, B≈113)
         const isLawn = new Uint8Array(w * h);
         let lawnTotal = 0;
         for (let i = 0, p = 0; i < imgData.length; i += 4, p++) {
@@ -591,7 +752,6 @@
             }
         }
 
-        // 若色温偏移导致标准草坪像素偏少，放宽黄绿草坪判定条件
         if (lawnTotal < w * h * 0.05) {
             lawnTotal = 0;
             for (let i = 0, p = 0; i < imgData.length; i += 4, p++) {
@@ -869,6 +1029,7 @@
         if (!dragMode) return;
         dragMode = null;
         document.getElementById('detectBadge').textContent = `📐 当前选框 (${Math.round(pt2.x - pt1.x)}×${Math.round(pt2.y - pt1.y)} px)`;
+        saveAppState();
     });
 
     document.getElementById('reAutoDetectBtn').addEventListener('click', function() {
@@ -905,7 +1066,7 @@
     iconCanvas.height = 56;
     const iconCtx = iconCanvas.getContext('2d');
 
-    function extractBoard(collapseCropPanel = false) {
+    function populateRawTilesFromCrop() {
         if (!pt1 || !pt2) return;
         const w = pt2.x - pt1.x;
         const h = pt2.y - pt1.y;
@@ -919,12 +1080,10 @@
                 const cx = pt1.x + c * cellW;
                 const cy = pt1.y + r * cellH;
 
-                // 1. 采样 16x16 标准分析块
                 patchCtx.clearRect(0, 0, 16, 16);
                 patchCtx.drawImage(rawCanvas, cx, cy, cellW, cellH, 0, 0, 16, 16);
                 const rgba = patchCtx.getImageData(0, 0, 16, 16).data;
 
-                // 采集四角 (各 2x2 共 16 个像素) 的中位数 RGB 作为当前格子的奇偶棋盘背景色
                 const cornerR = [], cornerG = [], cornerB = [];
                 const cornerCoords = [
                     [0,0],[0,1],[1,0],[1,1],
@@ -985,7 +1144,6 @@
 
                 const fgRatio = fgCountInner / 144.0;
 
-                // 2. 提取高清图标供棋盘与 GIF 显示
                 iconCtx.clearRect(0, 0, 56, 56);
                 iconCtx.drawImage(
                     rawCanvas,
@@ -1006,10 +1164,14 @@
                 });
             }
         }
+    }
+
+    function extractBoard(collapseCropPanel = false) {
+        if (!pt1 || !pt2) return;
+        populateRawTilesFromCrop();
 
         document.getElementById('step2Section').classList.remove('hidden');
 
-        // 提取棋盘后自动收起步骤一的原图选框，使棋盘和步骤控制直接处于屏幕第一视觉中心
         if (collapseCropPanel) {
             document.getElementById('cropPanelBody').classList.add('hidden');
             document.getElementById('toggleCropPanelBtn').textContent = '展开选框 ▼';
@@ -1145,13 +1307,13 @@
         if (hasSingleton) warnEl.classList.remove('hidden');
         else warnEl.classList.add('hidden');
 
-        // 刚提取时展开顶部图案库供用户一眼核对
         const paletteDetails = document.getElementById('paletteDetails');
         if (paletteDetails) paletteDetails.open = true;
 
         currentBrush = 0;
         resetToEditMode();
         initSolverUI();
+        saveAppState();
     }
 
     document.getElementById('toleranceSlider').addEventListener('input', function() {
@@ -1250,7 +1412,8 @@
             toggleMergeMode();
             resetToEditMode();
             initSolverUI();
-            showToast('已成功合并两个图案！', 'success');
+            saveAppState();
+            showToast('已成功合并两个图案并自动保存！', 'success');
         }
     }
 
@@ -1258,7 +1421,6 @@
         const div = document.getElementById('palette');
         div.innerHTML = '';
 
-        // 橡皮擦（置空）
         const eraser = document.createElement('div');
         eraser.className = `palette-btn rounded-xl border-2 bg-white flex flex-col items-center justify-center ${
             currentBrush === 0 && !isMergeMode ? 'selected border-red-500 bg-red-50' : 'border-slate-200'
@@ -1361,6 +1523,7 @@
                     recountBoardItems();
                     renderPalette();
                     renderBoard(currentBoard);
+                    saveAppState();
                 });
 
                 boardDiv.appendChild(cell);
@@ -1480,6 +1643,16 @@
         return -((steps + components) * 10000) - (components * 100) - remaining;
     }
 
+    function rebuildPlaybackStatesFromSteps() {
+        playbackStates = [currentBoard.map(row => [...row])];
+        let tempBoard = currentBoard.map(row => [...row]);
+        for (const step of solutionSteps) {
+            const nextBoard = applyMove(tempBoard, step.group);
+            playbackStates.push(nextBoard);
+            tempBoard = nextBoard;
+        }
+    }
+
     async function runSolver() {
         stopAutoPlay();
         isBoardEditable = false;
@@ -1502,7 +1675,6 @@
             return;
         }
 
-        // 自动收起顶部的图案库抽屉和截图选框，使棋盘与下方的【上一步/下一步】完全处于同一屏！
         const paletteDetails = document.getElementById('paletteDetails');
         if (paletteDetails) paletteDetails.open = false;
         document.getElementById('cropPanelBody').classList.add('hidden');
@@ -1570,13 +1742,7 @@
 
         solutionSteps = bestFinalState.steps;
         currentStepIndex = 0;
-        playbackStates = [currentBoard.map(row => [...row])];
-        let tempBoard = currentBoard.map(row => [...row]);
-        for (const step of solutionSteps) {
-            const nextBoard = applyMove(tempBoard, step.group);
-            playbackStates.push(nextBoard);
-            tempBoard = nextBoard;
-        }
+        rebuildPlaybackStatesFromSteps();
 
         const scoreBadge = document.getElementById('scoreDisplay');
         scoreBadge.classList.remove('hidden');
@@ -1593,7 +1759,8 @@
         gifCard.classList.remove('hidden');
         document.getElementById('gifResultBox').classList.add('hidden');
         updatePlaybackUI();
-        showToast(`求解完成！共需 ${solutionSteps.length} 步全清，直接点击棋盘正下方的「下一步」跟打即可。`, 'success');
+        saveAppState();
+        showToast(`求解完成！共需 ${solutionSteps.length} 步全清，所有步骤进度已实时自动保存。`, 'success');
     }
 
     document.getElementById('solveBtn').addEventListener('click', runSolver);
@@ -1619,6 +1786,7 @@
                 stopAutoPlay();
                 currentStepIndex = idx;
                 updatePlaybackUI();
+                saveAppState();
             });
             container.appendChild(row);
         });
@@ -1660,6 +1828,7 @@
         if (currentStepIndex > 0) {
             currentStepIndex--;
             updatePlaybackUI();
+            saveAppState();
         }
     }
 
@@ -1668,6 +1837,7 @@
         if (currentStepIndex < solutionSteps.length) {
             currentStepIndex++;
             updatePlaybackUI();
+            saveAppState();
         }
     }
 
@@ -1678,6 +1848,7 @@
             if (currentStepIndex >= solutionSteps.length) {
                 currentStepIndex = 0;
                 updatePlaybackUI();
+                saveAppState();
             }
             const btn = document.getElementById('autoPlayBtn');
             btn.innerHTML = '⏸️ 暂停播放';
@@ -1689,6 +1860,7 @@
                 if (currentStepIndex < solutionSteps.length) {
                     currentStepIndex++;
                     updatePlaybackUI();
+                    saveAppState();
                 } else {
                     stopAutoPlay();
                 }
@@ -1716,6 +1888,10 @@
         stopAutoPlay();
         currentStepIndex = parseInt(this.value, 10);
         updatePlaybackUI();
+        saveAppState();
+    });
+    document.getElementById('gifSpeedSelect').addEventListener('change', function() {
+        saveAppState();
     });
 
     // 支持电脑端左右方向键快速切换上一步/下一步
@@ -1737,7 +1913,7 @@
         const palette = [];
         for (let r = 0; r < 6; r++) {
             for (let g = 0; g < 6; g++) {
-                for (let b = 0; b < 6; b++) {
+                for (let b = 0; b < 6; g++) {
                     palette.push([
                         Math.round((r * 255) / 5),
                         Math.round((g * 255) / 5),
@@ -2182,13 +2358,126 @@
         showToast('提示：在 iPhone 上也可直接长按上方预览动图 → 选择「存储到“照片”」', 'info');
     });
 
-    window.addEventListener('load', function() {
+    // =========================================================================
+    // 启动时自动检查并恢复上次保存的状态 (无缝衔接原图、选框、棋盘与当前步骤)
+    // =========================================================================
+    async function restoreSavedSessionOrLoadDemo() {
+        const saved = await readPersistedData();
+        if (saved && saved.currentBoard && saved.items) {
+            isRestoringState = true;
+            try {
+                const imgToLoad = new Image();
+                const loadPromise = new Promise((resolve, reject) => {
+                    imgToLoad.onload = () => resolve();
+                    imgToLoad.onerror = () => reject(new Error('Image load failed'));
+                });
+
+                if (saved.imageDataUrl && saved.imageDataUrl !== 'DEMO') {
+                    currentImageSourceDataUrl = saved.imageDataUrl;
+                    imgToLoad.src = saved.imageDataUrl;
+                } else {
+                    currentImageSourceDataUrl = 'DEMO';
+                    const demoImg = document.getElementById('demoImageAsset');
+                    imgToLoad.src = demoImg.src;
+                }
+                await loadPromise;
+
+                setupRawAndUploadCanvas(imgToLoad);
+
+                if (saved.pt1 && saved.pt2) {
+                    pt1 = { ...saved.pt1 };
+                    pt2 = { ...saved.pt2 };
+                } else {
+                    autoDetectGrid();
+                }
+                drawUploadCanvas();
+                populateRawTilesFromCrop();
+
+                const badge = document.getElementById('detectBadge');
+                badge.classList.remove('hidden');
+                badge.textContent = `🎯 已恢复选框 (${Math.round(pt2.x - pt1.x)}×${Math.round(pt2.y - pt1.y)} px)`;
+
+                // 收起顶部选框，直接展示棋盘
+                document.getElementById('cropPanelBody').classList.add('hidden');
+                document.getElementById('toggleCropPanelBtn').textContent = '展开选框 ▼';
+                document.getElementById('step2Section').classList.remove('hidden');
+
+                if (saved.tolerance) {
+                    document.getElementById('toleranceSlider').value = saved.tolerance;
+                    document.getElementById('toleranceVal').textContent = saved.tolerance;
+                }
+                if (saved.gifSpeed) {
+                    document.getElementById('gifSpeedSelect').value = saved.gifSpeed;
+                }
+
+                // 恢复 ITEMS 和 currentBoard（保留用户上次合并或微调的结果）
+                ITEMS = {};
+                for (const id in saved.items) {
+                    const itemData = saved.items[id];
+                    const preloadImg = itemData.img ? new Image() : null;
+                    if (preloadImg) preloadImg.src = itemData.img;
+                    ITEMS[id] = {
+                        img: itemData.img || '',
+                        name: itemData.name || `图案 ${id}`,
+                        count: itemData.count || 0,
+                        imgEl: preloadImg
+                    };
+                }
+                currentBoard = saved.currentBoard.map(r => [...r]);
+                initSolverUI();
+
+                // 如果上次已经求出了步骤，直接恢复到对应的步骤进度！
+                if (saved.hasSolved && Array.isArray(saved.solutionSteps) && saved.solutionSteps.length > 0) {
+                    solutionSteps = saved.solutionSteps.map(s => ({ group: s.group.map(p => [...p]) }));
+                    currentStepIndex = Math.max(0, Math.min(solutionSteps.length, saved.currentStepIndex || 0));
+                    rebuildPlaybackStatesFromSteps();
+
+                    const paletteDetails = document.getElementById('paletteDetails');
+                    if (paletteDetails) paletteDetails.open = false;
+
+                    const solveBtn = document.getElementById('solveBtn');
+                    solveBtn.innerHTML = '<span>🔄</span> 重新计算最优解法';
+
+                    const scoreBadge = document.getElementById('scoreDisplay');
+                    scoreBadge.classList.remove('hidden');
+                    scoreBadge.innerHTML = saved.scoreBadgeHtml || `🎉 全清 (${solutionSteps.length}步)`;
+
+                    const slider = document.getElementById('stepProgressSlider');
+                    slider.max = solutionSteps.length;
+                    slider.value = currentStepIndex;
+
+                    buildStepListUI();
+                    document.getElementById('resultArea').classList.remove('hidden');
+                    document.getElementById('gifExportCard').classList.remove('hidden');
+                    updatePlaybackUI();
+
+                    const stepLabel = currentStepIndex >= solutionSteps.length
+                        ? `已完成全部 ${solutionSteps.length} 步`
+                        : `第 ${currentStepIndex + 1} / ${solutionSteps.length} 步`;
+                    updateSaveStatusBadge(`💾 已恢复上次进度 (${stepLabel})`);
+                    showToast(`已无缝恢复上次保存的截图与进度：当前在 ${stepLabel}`, 'success');
+                } else {
+                    updateSaveStatusBadge(`💾 已恢复上次棋盘 (${saved.savedAt || '刚刚'})`);
+                    showToast('已恢复上次保存的截图与棋盘状态！', 'success');
+                }
+                isRestoringState = false;
+                return;
+            } catch (err) {
+                isRestoringState = false;
+            }
+        }
+
+        // 若无历史存档，默认加载测试截图
         const demoImg = document.getElementById('demoImageAsset');
         if (demoImg && demoImg.complete && demoImg.naturalWidth > 0) {
-            loadFromImageElement(demoImg, true);
+            loadFromImageElement(demoImg, true, 'DEMO');
         } else if (demoImg) {
-            demoImg.onload = () => loadFromImageElement(demoImg, true);
+            demoImg.onload = () => loadFromImageElement(demoImg, true, 'DEMO');
         }
+    }
+
+    window.addEventListener('load', function() {
+        restoreSavedSessionOrLoadDemo();
     });
 </script>
 </body>
